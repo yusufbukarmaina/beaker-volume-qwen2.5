@@ -221,11 +221,6 @@ def sample_to_messages(sample: Dict[str, Any], instruction: str) -> Optional[Dic
         print(f"Warning: Skipping sample - no valid label found. Sample keys: {list(sample.keys())}")
         return None
 
-    # CRITICAL: Final safety check - ensure img is not None before creating messages
-    if img is None or not isinstance(img, PILImage.Image):
-        print(f"Warning: Skipping sample - image validation failed. Image type: {type(img)}")
-        return None
-
     # Use provided instruction or use the 'question' field if available, otherwise use default
     if not instruction or not str(instruction).strip():
         if "question" in sample and sample["question"] is not None:
@@ -485,8 +480,6 @@ def load_dataset_background(dataset_repo: str, instruction: str, max_train_sampl
         
         train_list = []
         skipped_train = 0
-        none_images_train = 0
-        no_label_train = 0
 
         for i in range(n_train):
             if (i + 1) % 100 == 0:
@@ -495,36 +488,20 @@ def load_dataset_background(dataset_repo: str, instruction: str, max_train_sampl
             # CRITICAL FIX: Access the sample first, let HF decode the image
             sample = train_src[i]
             
-            # Track None images
-            img_raw = sample.get("image", None)
-            if img_raw is None:
-                none_images_train += 1
-                skipped_train += 1
-                if skipped_train <= 5:
-                    print(f"Skipped sample {i}: Image is None")
-                continue
-            
             # If dataset has questions and no custom instruction, use empty string
             # so sample_to_messages will use the question field
             instr = "" if use_dataset_questions else instruction
             item = sample_to_messages(sample, instr)
             if item is None:
                 skipped_train += 1
-                # Check if it was due to missing label
-                if img_raw is not None:
-                    no_label_train += 1
                 if skipped_train <= 5:  # Only print first 5 failures
-                    print(f"Skipped sample {i}: Failed to process (likely missing label)")
+                    print(f"Skipped sample {i}: Failed to process")
                 continue
             train_list.append(item)
 
         if len(train_list) == 0:
             raise ValueError(
                 f"❌ All {n_train} training samples were filtered out!\n"
-                f"Skipped: {skipped_train} total\n"
-                f"  - None images: {none_images_train}\n"
-                f"  - Missing labels: {no_label_train}\n"
-                f"  - Other: {skipped_train - none_images_train - no_label_train}\n\n"
                 f"Please check:\n"
                 f"1. Does your dataset have an 'image' field?\n"
                 f"2. Does it have 'answer', 'volume_ml', or 'volume_label' field?\n"
@@ -537,8 +514,6 @@ def load_dataset_background(dataset_repo: str, instruction: str, max_train_sampl
 
         val_list = []
         skipped_val = 0
-        none_images_val = 0
-        no_label_val = 0
 
         if val_split is not None:
             val_src = ds[val_split]
@@ -549,20 +524,10 @@ def load_dataset_background(dataset_repo: str, instruction: str, max_train_sampl
                     status_manager.update(f"🔄 Processing val samples... ({i+1}/{n_val})", 70)
 
                 sample = val_src[i]
-                
-                # Track None images
-                img_raw = sample.get("image", None)
-                if img_raw is None:
-                    none_images_val += 1
-                    skipped_val += 1
-                    continue
-                
                 instr = "" if use_dataset_questions else instruction
                 item = sample_to_messages(sample, instr)
                 if item is None:
                     skipped_val += 1
-                    if img_raw is not None:
-                        no_label_val += 1
                     continue
                 val_list.append(item)
         else:
@@ -584,27 +549,14 @@ def load_dataset_background(dataset_repo: str, instruction: str, max_train_sampl
 
         print(f"\n=== DATASET LOADED ===")
         print(f"Train samples: {len(train_ds_hf)} (skipped {skipped_train})")
-        if skipped_train > 0:
-            print(f"  └─ None images: {none_images_train}")
-            print(f"  └─ Missing labels: {no_label_train}")
-            print(f"  └─ Other issues: {skipped_train - none_images_train - no_label_train}")
         print(f"Val samples: {len(val_ds_hf)} (skipped {skipped_val})")
-        if skipped_val > 0:
-            print(f"  └─ None images: {none_images_val}")
-            print(f"  └─ Missing labels: {no_label_val}")
-            print(f"  └─ Other issues: {skipped_val - none_images_val - no_label_val}")
         if use_dataset_questions:
             print(f"Using questions from dataset as instructions")
         print(f"======================\n")
 
         status_msg = (
-            f"✅ Dataset ready!\n"
-            f"Train: {len(train_ds_hf)} samples (skipped {skipped_train})\n"
-            f"  • None images: {none_images_train}\n"
-            f"  • Missing labels: {no_label_train}\n"
-            f"Val: {len(val_ds_hf)} samples (skipped {skipped_val})\n"
-            f"  • None images: {none_images_val}\n"
-            f"  • Missing labels: {no_label_val}"
+            f"✅ Dataset ready! Train={len(train_ds_hf)} (skipped {skipped_train}) | "
+            f"Val={len(val_ds_hf)} (skipped {skipped_val})"
         )
         if use_dataset_questions:
             status_msg += "\n📝 Using dataset questions as instructions"
