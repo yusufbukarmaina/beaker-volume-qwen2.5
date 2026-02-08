@@ -1,0 +1,10 @@
+unsloth==2025.6.2
+transformers==4.51.3
+trl==0.18.1
+accelerate==1.7.0
+datasets==3.6.0
+gradio==5.34.2
+huggingface_hub==0.33.0
+pillow
+matplotlib
+numpy
